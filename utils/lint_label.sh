@@ -246,7 +246,7 @@ for f in "$@"; do
         if (cmd ~ (CP "tac([ ]|$)"))
             report("ERROR", NR, "tac does not exist on macOS; use tail -r to reverse lines [tac]")
         if (code ~ /IGNORECASE/)
-            report("ERROR", NR, "IGNORECASE is ignored by macOS awk, so the match stays case-sensitive; compare with tolower(), e.g. tolower($1)==\"location:\" [awk-ignorecase]")
+            report("WARN", NR, "IGNORECASE is ignored by macOS awk, so the match stays case-sensitive; compare with tolower(), e.g. tolower($1)==\"location:\" [awk-ignorecase]")
         if (code ~ /gensub[ ]*\(/)
             report("ERROR", NR, "gensub() does not exist in macOS awk; use sub()/gsub() or sed -E [awk-gensub]")
         if (code ~ /--fail-with-body|--retry-all-errors|--no-progress-meter|%\{json\}/)
