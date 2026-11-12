@@ -54,3 +54,4 @@ The Community Maintainer team:
 - [Richard Glaser - @uurazzle](https://github.com/uurazzle)
 
  And with numerous contributions from many others. Thank you all, very much!
+CI test line without final newline
