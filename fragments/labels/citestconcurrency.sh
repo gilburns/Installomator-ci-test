@@ -1,5 +1,5 @@
 citestconcurrency)
-    name="Stats CI"
+    name="Stats CI 3"
     type="dmg"
     downloadURL="$(downloadURLFromGit exelban stats)"
     appNewVersion="$(versionFromGit exelban stats)"
