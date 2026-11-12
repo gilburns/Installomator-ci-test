@@ -9,5 +9,6 @@ zoapiclient)
 		cleanupAndExit 95 "Zoapi Client requires Apple Silicon" ERROR
 	fi
 	appNewVersion=$(curl -fsL "https://share.zoapi.com/zoapi/v0/api/fetch/client/mac/latest-mac.yml" | grep "^version:" | sed 's/^version:[[:space:]]*\([0-9.]*\).*/\1/')
+	blockingProcesses=( "Zoapi Client" )
 	expectedTeamID="WFY2HJH6B3"
 	;;
