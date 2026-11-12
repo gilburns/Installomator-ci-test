@@ -17,7 +17,7 @@ concurrency:
 jobs:
   line-endings:
     name: Line endings
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -54,7 +54,7 @@ jobs:
 
   generated-files:
     name: Generated files
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -90,7 +90,7 @@ jobs:
 
   label-lint:
     name: Label lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -147,10 +147,12 @@ jobs:
             echo
             echo "ERROR fails the check. WARN and INFO are for review; please fix them while you are editing the label."
             echo
+            echo "Each message ends with a rule name in brackets. See [Label Lint Rules](https://github.com/Installomator/Installomator/wiki/Label-Lint-Rules) for what each rule means and how to fix it."
+            echo
             sed 's/^/    /' "$report"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          xargs -0 bash "$linter" -g < "$RUNNER_TEMP/labels.list"
+          xargs -0 bash "$linter" -g < "$RUNNER_TEMP/labels.list" || exit 1
 
       - name: Fail on unexpected files in fragments/labels
         if: always() && steps.labels.outputs.invalid != '0'

@@ -12,6 +12,9 @@
 # Exit status: 0 = no errors, 1 = at least one ERROR, 2 = usage.
 #
 # Levels: ERROR fails the check; WARN and INFO are reported for review.
+# Each message ends with a rule name in brackets, e.g. [awk-ignorecase].
+# The rules are explained at
+# https://github.com/Installomator/Installomator/wiki/Label-Lint-Rules
 #
 # Written for bash 3.2 (macOS /bin/bash) and BSD/GNU awk alike. Set AWK to
 # choose the awk binary (default: awk).
@@ -103,11 +106,11 @@ for f in "$@"; do
     {
         raw = $0
         lines[NR] = raw
-        if (raw ~ /\r/) { report("ERROR", NR, "CRLF line ending (editorconfig: end_of_line = lf)"); sub(/\r$/, "", raw) }
-        if (raw ~ /\t/) report("ERROR", NR, "tab character (editorconfig: indent_style = space)")
-        if (raw ~ /[ \t]+$/) report("ERROR", NR, "trailing whitespace (editorconfig: trim_trailing_whitespace = true)")
+        if (raw ~ /\r/) { report("ERROR", NR, "Windows (CRLF) line ending; save the file with Unix (LF) line endings [crlf]"); sub(/\r$/, "", raw) }
+        if (raw ~ /\t/) report("ERROR", NR, "tab character; indent with spaces, 4 per level [tab]")
+        if (raw ~ /[ \t]+$/) report("ERROR", NR, "spaces or tabs at the end of the line; remove them [trailing-whitespace]")
 
-        if (NR == 1 && raw ~ /^#!/) { report("ERROR", NR, "labels must not have a shebang"); next }
+        if (NR == 1 && raw ~ /^#!/) { report("ERROR", NR, "remove the #! line; a label is a case branch inside Installomator.sh, not a standalone script [shebang]"); next }
 
         # ---- header (label name lines) ----
         if (in_header) {
@@ -121,15 +124,15 @@ for f in "$@"; do
                 # header line that zsh may accept but does not follow the convention
                 nm = raw; sub(/[ ]*(\|[ ]*\\|\))$/, "", nm)
                 if (nm ~ /^[A-Za-z0-9_.-]+$/ && nm !~ /^[a-z0-9_-]+$/)
-                    report("ERROR", NR, "label name must use only lowercase a-z, 0-9, - and _ (got: " nm ")")
+                    report("ERROR", NR, "label name must use only lowercase letters a-z, digits 0-9, - and _ (got: " nm ") [label-name]")
                 else
-                    report("ERROR", NR, "label header line \"" raw "\" should be exactly name|\\ (alias line) or name) (last line), no spaces")
+                    report("ERROR", NR, "header line \"" raw "\" must be name) on the last header line, or name|\\ on each alias line above it, with no spaces [header-format]")
                 if (label == "" && nm ~ /^[A-Za-z0-9_.-]+$/) label = nm
                 if (nm ~ /^[A-Za-z0-9_.-]+$/) names = names " " nm
                 if (raw ~ /\)$/) { in_header = 0; header_done = 1 }
                 next
             } else {
-                report("ERROR", NR, "expected the label name followed by \")\" at column 0 (aliases as name|\\ lines)")
+                report("ERROR", NR, "the first line must be the label name followed by ) with no indentation; put any aliases on lines above it as name|\\ [header-format]")
                 in_header = 0; header_done = 1
                 # fall through and treat as body
             }
@@ -142,8 +145,8 @@ for f in "$@"; do
 
         match(raw, /^ */); ind = RLENGTH
         if (raw !~ /^\t/ && raw !~ /^[ ]*;;[ ]*$/) {
-            if (ind == 0) report("ERROR", NR, "body line not indented (labels are indented 4 spaces inside the case branch)")
-            else if (ind % 4 != 0) report("WARN", NR, "indent of " ind " spaces is not a multiple of 4 (editorconfig: indent_size = 4)")
+            if (ind == 0) report("ERROR", NR, "line is not indented; indent every line of the label body by 4 spaces [indent]")
+            else if (ind % 4 != 0) report("WARN", NR, "indented by " ind " spaces; use a multiple of 4 spaces [indent]")
         }
 
         trimmed = raw; sub(/^[ \t]+/, "", trimmed)
@@ -151,17 +154,17 @@ for f in "$@"; do
 
         if (is_comment) {
             if (trimmed ~ /^#[ ]*(downloadURL|appNewVersion|name|type|expectedTeamID|archiveName|appName)=/)
-                report("WARN", NR, "commented-out assignment; remove dead code before submitting")
+                report("WARN", NR, "commented-out assignment; remove unused code [comments]")
             else if (tolower(trimmed) ~ /credit|contributed by|thanks to|^# *(by|author) /)
-                report("WARN", NR, "credit/author comment; CONTRIBUTING asks not to add these to labels")
+                report("WARN", NR, "credit/author comment; per CONTRIBUTING.md, credit lines are not kept in labels [comments]")
             else
-                report("WARN", NR, "comment line in label; labels are kept free of comments to keep Installomator.sh short")
+                report("WARN", NR, "comment line; labels do not carry comments, to keep Installomator.sh short [comments]")
             next
         }
 
         code = strip_comment(trimmed)
         if (code != trimmed)
-            report("WARN", NR, "trailing comment in label; labels are kept free of comments to keep Installomator.sh short")
+            report("WARN", NR, "comment at the end of the line; labels do not carry comments, to keep Installomator.sh short [comments]")
 
         # assignments
         if (match(code, /^[A-Za-z_][A-Za-z0-9_]*(\+)?=/)) {
@@ -170,37 +173,37 @@ for f in "$@"; do
             seen[var] = NR
             if (raw ~ /\\$/) {
                 if (var ~ /^(name|type|downloadURL|appNewVersion|expectedTeamID|archiveName|appName|packageID)$/)
-                    report("ERROR", NR, var "= continues onto the next line with \\; each assignment must be one physical line")
+                    report("ERROR", NR, var "= continues onto the next line with \\; put the whole assignment on one line [multiline-assignment]")
                 else
-                    report("WARN", NR, "line continuation (\\) in an assignment; keep each assignment on one line")
+                    report("WARN", NR, "assignment continues onto the next line with \\; keep each assignment on one line [multiline-assignment]")
             }
             if (var == "type") {
                 t = val; gsub(/"/, "", t); gsub(SQ, "", t)
                 types[NR] = t
                 if (index(valid_types, " " t " ") == 0 && t !~ /^\$/)
-                    report("ERROR", NR, "type=\"" t "\" is not a valid type (case-sensitive: dmg pkg zip tbz bz2 pkgInDmg pkgInZip appInDmgInZip pkgInDmgInZip updateronly)")
+                    report("ERROR", NR, "type=\"" t "\" is not a valid type; use one of dmg pkg zip tbz bz2 pkgInDmg pkgInZip appInDmgInZip pkgInDmgInZip updateronly (case-sensitive) [type]")
                 last_type = t
             }
             if (var == "expectedTeamID") {
                 tid = val; gsub(/"/, "", tid); gsub(SQ, "", tid)
                 if (tid == "Software Update")
-                    report("INFO", NR, "expectedTeamID \"Software Update\" is only correct for Apple-signed pkgs (no Team ID in the spctl origin)")
+                    report("INFO", NR, "expectedTeamID \"Software Update\" is only correct for pkgs signed by Apple; check with spctl -a -vv -t install [team-id]")
                 else if (tid !~ /^\$/ && tid !~ /^[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]$/)
-                    report("WARN", NR, "expectedTeamID \"" tid "\" is not a 10-character Team ID; only valid for legacy certificates whose spctl origin has no (TEAMID) — verify with spctl -a -vv")
+                    report("WARN", NR, "expectedTeamID \"" tid "\" is not a 10-character Team ID; check the signature with spctl -a -vv (app) or spctl -a -vv -t install (pkg) and use the ID in parentheses. Only older certificates without one use another value [team-id]")
                 if (val !~ ("^[\"" SQ "]"))
-                    report("WARN", NR, "quote the expectedTeamID value: expectedTeamID=\"" tid "\"")
+                    report("WARN", NR, "put the Team ID in double quotes: expectedTeamID=\"" tid "\" [team-id]")
             }
             if (var ~ /^(blockingProcesses|curlOptions)$/ && val !~ /^\(/)
-                report("WARN", NR, var " should be an array: " var "=( ... )")
+                report("WARN", NR, var " must be an array: " var "=( \"item\" ... ) [array]")
             if (var ~ /^(updateToolArguments|CLIArguments)$/ && val !~ /^\(/)
-                report("INFO", NR, var " is usually written as an array: " var "=( ... )")
+                report("INFO", NR, var " is usually an array: " var "=( ... ) [array]")
             if (var == "archiveName" && git_line > 0) archive_after_git = NR
             if (var == "downloadURL" && val ~ /^"?http:\/\//)
-                report("WARN", NR, "downloadURL uses http://; use https:// if the vendor supports it")
+                report("WARN", NR, "downloadURL uses http://; use https:// if the vendor offers it [https]")
         }
         if (code ~ /^(appCustomVersion|function appCustomVersion)/) {
             seen["appCustomVersion"] = NR
-            if (code !~ /\}[ ]*$/) report("WARN", NR, "appCustomVersion should be a one-line function: appCustomVersion(){ ... }")
+            if (code !~ /\}[ ]*$/) report("WARN", NR, "write appCustomVersion as a one-line function: appCustomVersion(){ ... } [appcustomversion]")
         }
 
         if (code ~ /downloadURLFromGit/ && git_line == 0) git_line = NR
@@ -217,65 +220,67 @@ for f in "$@"; do
         cmd = code; gsub(SQ "[^" SQ "]*" SQ, SQ SQ, cmd)
         CP = "(^|[|;&(]|\\$\\(|then|do|else)[ ]*(/usr/bin/|/usr/local/bin/|/opt/homebrew/bin/)?"
         if (cmd ~ (CP "jq([ ]|$)"))
-            report("ERROR", NR, "jq is only present on macOS 15+; use getJSONValue \"$json\" \"key.path\"")
+            report("ERROR", NR, "jq is only available on macOS 15 and later; use getJSONValue \"$json\" \"key.path\" instead [jq]")
         if (cmd ~ (CP "python[0-9.]*([ ]|$)"))
-            report("ERROR", NR, "python is not available on current macOS (removed 12.3); use getJSONValue / xpath / sed")
+            report("ERROR", NR, "python was removed from macOS in 12.3; use getJSONValue, xpath or sed instead [python]")
         if (cmd ~ (CP "(perl|ruby)[ ]+-"))
-            report("WARN", NR, "perl/ruby one-liners rely on deprecated bundled runtimes; use sed -E / awk / zsh expansion")
+            report("WARN", NR, "perl and ruby are deprecated in macOS and may be removed; use sed -E, awk or zsh instead [perl-ruby]")
         if (code ~ /\/usr\/bin\/xpath/)
-            report("WARN", NR, "call the xpath wrapper function, not /usr/bin/xpath (it handles the Big Sur -e change)")
+            report("WARN", NR, "call xpath (the Installomator wrapper function), not /usr/bin/xpath; the wrapper handles the argument change in macOS 11 [xpath]")
         if (code ~ /(^|[ |;(])xpath[ ]+-e/)
-            report("ERROR", NR, "xpath -e breaks on Catalina and earlier; the xpath wrapper adds -e only when needed")
+            report("ERROR", NR, "xpath -e fails on macOS 10.15 and earlier; call xpath without -e and the Installomator wrapper adds it when needed [xpath]")
         if (code ~ /grep[ ]+(-[A-Za-z]*P|--perl)/)
-            report("ERROR", NR, "grep -P (PCRE) is not supported by macOS grep; use grep -E / sed -E")
+            report("ERROR", NR, "grep -P does not exist in macOS grep; use grep -E or sed -E [grep-p]")
         if (code ~ /sed[ ]+(-[A-Za-z]*r|--regexp-extended)/)
-            report("WARN", NR, "use sed -E (house style, BSD-safe) instead of sed -r")
+            report("WARN", NR, "use sed -E instead of sed -r; -E is the form every macOS version supports [sed-r]")
         if (code ~ /sed[ ]+(-[A-Za-z]*i)/)
-            report("WARN", NR, "sed -i edits files in place; labels should not need it (and BSD/GNU syntax differ)")
+            report("WARN", NR, "sed -i edits files in place and works differently on macOS and Linux; labels should not need it [sed-i]")
         if (code ~ /plutil[^|]*-extract[^|]*[ ]raw/)
-            report("ERROR", NR, "plutil -extract ... raw requires macOS 12+; use getJSONValue for JSON, or defaults read / PlistBuddy for plists")
+            report("ERROR", NR, "plutil -extract ... raw requires macOS 12 or later; use getJSONValue for JSON, or defaults read / PlistBuddy for plists [plutil-raw]")
         if (cmd ~ (CP "readlink[ ]+-[A-Za-z]*f") || cmd ~ (CP "realpath([ ]|$)"))
-            report("ERROR", NR, "readlink -f / realpath are missing on older macOS; use the zsh :A modifier (${path:A})")
+            report("ERROR", NR, "readlink -f and realpath are missing on older macOS; use the zsh :A modifier, e.g. ${path:A} [readlink]")
         if (cmd ~ (CP "date[ ]+(-[A-Za-z]*d|--date)"))
-            report("ERROR", NR, "GNU date -d is not available; use date -j -f <fmt> <string> +<outfmt>")
+            report("ERROR", NR, "date -d only exists on Linux; on macOS use date -j -f <input format> <string> +<output format> [date-d]")
         if (code ~ /head[ ]+-n[ ]*-[0-9]/ || code ~ /head[ ]+--lines=-/)
-            report("ERROR", NR, "negative head -n is GNU-only; use sed " SQ "$d" SQ " or awk")
+            report("ERROR", NR, "head -n with a negative count only works on Linux; to drop the last line use sed " SQ "$d" SQ " [head-negative]")
         if (cmd ~ (CP "tac([ ]|$)"))
-            report("ERROR", NR, "tac does not exist on macOS; use tail -r")
-        if (code ~ /gensub[ ]*\(|IGNORECASE/)
-            report("ERROR", NR, "GNU awk feature (gensub/IGNORECASE); macOS awk is BWK awk")
+            report("ERROR", NR, "tac does not exist on macOS; use tail -r to reverse lines [tac]")
+        if (code ~ /IGNORECASE/)
+            report("ERROR", NR, "IGNORECASE is ignored by macOS awk, so the match stays case-sensitive; compare with tolower(), e.g. tolower($1)==\"location:\" [awk-ignorecase]")
+        if (code ~ /gensub[ ]*\(/)
+            report("ERROR", NR, "gensub() does not exist in macOS awk; use sub()/gsub() or sed -E [awk-gensub]")
         if (code ~ /--fail-with-body|--retry-all-errors|--no-progress-meter|%\{json\}/)
-            report("ERROR", NR, "curl option newer than macOS 10.14'"'"'s curl 7.54")
+            report("ERROR", NR, "this curl option is newer than the curl in macOS 10.14 (7.54); remove it or use an older equivalent [curl-option]")
         if (code ~ /base64[ ]+(-d|--decode)/)
-            report("WARN", NR, "base64 -d is not accepted on older macOS; use base64 -D (or avoid)")
+            report("WARN", NR, "base64 -d is not accepted on older macOS; use base64 -D [base64]")
         if (code ~ /uname[ ]+-m/)
-            report("INFO", NR, "house convention for architecture is [[ $(arch) == \"arm64\" ]] / elif [[ $(arch) == \"i386\" ]]")
+            report("INFO", NR, "to check the architecture, use [[ $(arch) == \"arm64\" ]] ... elif [[ $(arch) == \"i386\" ]] like other labels [arch]")
         if (code ~ /api\.github\.com\/repos\/[^\/]+\/[^\/]+\/releases\/latest/)
-            report("INFO", NR, "consider downloadURLFromGit / versionFromGit instead of querying the GitHub API directly")
+            report("INFO", NR, "consider downloadURLFromGit / versionFromGit instead of calling the GitHub API directly [github-api]")
         if (cmd ~ (CP "exit([ ;]|$)") && code !~ /(^|[^a-z])awk[ ]/)
-            report("ERROR", NR, "do not call exit in a label; use cleanupAndExit <code> \"message\" ERROR")
+            report("ERROR", NR, "do not call exit in a label; use cleanupAndExit <code> \"message\" ERROR so Installomator can clean up [exit]")
         if (cmd ~ (CP "(eval|source)[ ]"))
-            report("ERROR", NR, "eval/source in a label; never execute or source vendor responses or downloaded content")
+            report("ERROR", NR, "do not use eval or source in a label; never run text downloaded from a vendor as code [eval]")
         if (cmd ~ (CP "local[ ]") && cmd !~ /appCustomVersion/)
-            report("WARN", NR, "local outside a function; drop it at label level")
+            report("WARN", NR, "local only works inside a function; remove local here [local]")
         if (code ~ /(^|[ |;(])curl[ ]/ && code !~ /curl[^|]*(-[A-Za-z]*f[A-Za-z]*|--fail)([ ]|$)/)
-            report("INFO", NR, "curl without -f/--fail: HTTP errors will be parsed as content")
+            report("INFO", NR, "curl without -f/--fail treats an HTTP error page as content; add -f, e.g. curl -fsL [curl-fail]")
     }
     END {
-        if (lastln == 0) { report("ERROR", 1, "file has no label body"); print "##", errs, warns, label names; exit }
+        if (lastln == 0) { report("ERROR", 1, "file has no label body [label-body]"); print "##", errs, warns, label names; exit }
         if (last != "    ;;")
-            report("ERROR", lastln, "label must end with a line of exactly four spaces and ;; (got: \"" last "\")")
+            report("ERROR", lastln, "the last line must be exactly four spaces followed by ;; (got: \"" last "\") [label-end]")
         if (blank_run > 0)
-            report("WARN", NR, "blank line(s) after ;; (exactly one final newline expected)")
+            report("WARN", NR, "blank line(s) after ;; - the file should end right after ;; and its newline [label-end]")
         split("name type downloadURL expectedTeamID", req, " ")
-        for (i = 1; i <= 4; i++) if (!(req[i] in seen)) report("ERROR", 1, "required variable " req[i] " is not set")
-        if (!("appNewVersion" in seen)) report("WARN", 1, "appNewVersion is not set; maintainers expect it (or a documented reason it cannot be determined)")
+        for (i = 1; i <= 4; i++) if (!(req[i] in seen)) report("ERROR", 1, "required variable " req[i] " is not set [required]")
+        if (!("appNewVersion" in seen)) report("WARN", 1, "appNewVersion is not set; maintainers expect it, or a reason in the PR why the version cannot be determined [appnewversion]")
         if (("packageID" in seen) && index(appless_types, " " last_type " ") > 0)
-            report("WARN", seen["packageID"], "packageID on a drag-and-drop type (" last_type "); it is meant for pkg installs that do not place an app in /Applications")
+            report("WARN", seen["packageID"], "packageID is set on a type=\"" last_type "\" label; it is only needed for pkg installs that do not place an app in /Applications [packageid]")
         if (arm_line > 0 && !arm_other && !url_outside)
-            report("ERROR", arm_line, "arm64 branch with no else/elif: Intel Macs fall through unhandled. Add an i386 branch, or for Apple-Silicon-only apps: else printlog ... ERROR; cleanupAndExit 95 \"<App> requires Apple Silicon\" ERROR")
+            report("ERROR", arm_line, "the arm64 branch has no else/elif, so Intel Macs are not handled; add an elif [[ $(arch) == \"i386\" ]] branch, or for Apple-Silicon-only apps: else cleanupAndExit 95 \"<App> requires Apple Silicon\" ERROR [arch]")
         if (archive_after_git)
-            report("WARN", archive_after_git, "archiveName is set after downloadURLFromGit; set it before so it selects the release asset")
+            report("WARN", archive_after_git, "archiveName must be set before downloadURLFromGit, which uses it to pick the release file [archivename]")
         print "##", errs, warns, label names
     }
     ' "$f")
@@ -290,7 +295,7 @@ EOF
     # final newline (awk cannot see this)
     if [ -s "$f" ] && [ -n "$(tail -c 1 "$f")" ]; then
         body="${body:+$body
-}$f:0: ERROR: missing final newline (editorconfig: insert_final_newline = true)"
+}$f:0: ERROR: missing newline at the end of the file [final-newline]"
         ferrs=$((ferrs + 1))
     fi
 
@@ -301,7 +306,7 @@ EOF
         *)
             if [ -n "$flabel" ] && [ "$base" != "$(basename "$f")" ]; then
                 body="${body:+$body
-}$f:1: WARN: file name \"$base.sh\" does not match a label name in its header (expected fragments/labels/$flabel.sh)"
+}$f:1: WARN: file name \"$base.sh\" does not match any label name in its header; rename it to fragments/labels/$flabel.sh [file-name]"
                 fwarns=$((fwarns + 1))
             fi
             ;;
@@ -312,7 +317,7 @@ EOF
         synerr=$( { printf 'case $label in\n'; cat "$f"; printf 'esac\n'; } | zsh -n 2>&1 )
         if [ -n "$synerr" ]; then
             body="${body:+$body
-}$f:0: ERROR: zsh -n syntax check failed: $(printf '%s' "$synerr" | head -3 | tr '\n' ' ')"
+}$f:0: ERROR: zsh syntax check failed: $(printf '%s' "$synerr" | head -3 | tr '\n' ' ')[syntax]"
             ferrs=$((ferrs + 1))
         fi
     fi
